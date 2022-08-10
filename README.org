@@ -1,4 +1,4 @@
-#+TITLE: Parmesian: A Monadic Parser Library for Scheme
+#+TITLE: Parmesan: A Monadic Parser Library for Scheme
 
 * Overview
 
