@@ -10,10 +10,6 @@
     (call-with-port (open-file-input-port in-file (file-options) (buffer-mode block) tx)
       (lambda (p) (get-string-all p)))))
 
-(define (run-parser p str)
-  (p (string->list str)
-     (lambda (v s) (format #t "Parser ran successfully.~%") v)
-     (lambda () (format #t "Parser failed.~%"))))
 
 (define event-payload-size/p (bind (char/p #\5) (lambda (x) uint8/p)))
 (define other-event-payload/p
@@ -243,6 +239,11 @@
                (- (post-frame-update-x-position p1)
                   (post-frame-update-x-position p2)))))) g1 g2))
   distances)
+
+(define (run-parser p str)
+  (p (string->list str)
+     (lambda (v s) (format #t "Parser ran successfully.~%") v)
+     (lambda () (format #t "Parser failed.~%"))))
 
 (define in (read-file in-file))
 (define out (run-parser slippi/p in))
