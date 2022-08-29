@@ -1,7 +1,7 @@
-
 ;;; slippi parsing example
 (import (rnrs records syntactic (6))
         (rnrs io ports)
+        (srfi :1)
         (parmesan))
 
 (define in-file "/home/liamp/projects/slippi_parser/test/raw.slp")
@@ -43,7 +43,7 @@
   (lift (repeat 4 uint8/p)
         (lambda (x) (apply make-version x))))
 (define game-info-block/p
-  (take 312))
+  (take/p 312))
 
 (define game-start/p
   (lift
@@ -53,15 +53,15 @@
     uint32/p
     (repeat 4 uint32/p)
     (repeat 4 uint32/p)
-    (repeat 4 (take 16))
+    (repeat 4 (take/p 16))
     uint8/p
     uint8/p
     uint8/p
     uint8/p
-    (repeat 4 (take 31))
-    (repeat 4 (take 10))
-    (return '()) ;; (repeat 4 (take 29)) TODO: version-dependent parse..
-    (return '()) ;; uint8/p
+    (repeat 4 (take/p 31))
+    (repeat 4 (take/p 10))
+    (return '()) ;; (repeat 4 (take/p 29)) TODO: version-dependent parse.. slppi UID
+    (return '()) ;; uint8/p TODO: also version-dependent parse.. language option
     )
    (lambda (l) (apply make-game-start l))))
 
@@ -112,38 +112,38 @@
 
 (define-record-type post-frame-update
   (fields
-   frame-number 
-   player-index 
-   is-follower 
-   internal-character-id 
-   action-state-id 
-   x-position 
-   y-position 
-   facing-direction 
-   percent 
-   shield-size 
-   last-hitting-attack-id 
-   current-combo-count 
-   last-hit-by 
-   stocks-remaining 
-   action-state-frame-counter 
-   state-bit-flags-1 
-   state-bit-flags-2 
-   state-bit-flags-3 
-   state-bit-flags-4 
-   state-bit-flags-5 
-   misc-as 
-   ground-air-state 
-   last-ground-id 
-   jumps-remaining 
-   l-cancel-status 
-   hurtbox-collision-state 
-   self-induced-air-x-speed 
-   self-induced-air-y-speed 
-   attack-based-x-speed 
-   attack-based-y-speed 
-   self-induced-ground-x-speed 
-   hitlag-frames-remaining 
+   frame-number
+   player-index
+   is-follower
+   internal-character-id
+   action-state-id
+   x-position
+   y-position
+   facing-direction
+   percent
+   shield-size
+   last-hitting-attack-id
+   current-combo-count
+   last-hit-by
+   stocks-remaining
+   action-state-frame-counter
+   state-bit-flags-1
+   state-bit-flags-2
+   state-bit-flags-3
+   state-bit-flags-4
+   state-bit-flags-5
+   misc-as
+   ground-air-state
+   last-ground-id
+   jumps-remaining
+   l-cancel-status
+   hurtbox-collision-state
+   self-induced-air-x-speed
+   self-induced-air-y-speed
+   attack-based-x-speed
+   attack-based-y-speed
+   self-induced-ground-x-speed
+   hitlag-frames-remaining
    animation-index))
 
 (define post-frame-update/p
@@ -179,8 +179,9 @@
     float32/p
     float32/p
     float32/p
-    float32/p
-    (return '()))
+    float32/p ;; TODO: version-dependent, requires 3.8.0
+    (return '()) ;; TODO: version-dependent, requires 3.11
+    )
         (lambda (l) (apply make-post-frame-update l))))
 
 (define-record-type game-end (fields game-end-method lras-initiator))
@@ -190,7 +191,8 @@
   (fields
    frame-number
    random-seed
-   scene-frame-counter))
+   scene-frame-counter ;; TODO: version-dependent parse, requires >3.10.0
+   ))
 (define frame-start/p
   (lift (all-of/p int32/p uint32/p (return '()))
         (lambda (l) (apply make-frame-start l))))
@@ -198,7 +200,7 @@
 (define-record-type frame-bookend (fields frame-number latest-finalized-frame))
 (define frame-bookend/p (lift (all-of/p int32/p uint32/p) (lambda (l) (apply make-frame-bookend l))))
 
-(define slippi/p
+(define slippi-raw/p
   (bind
    all-payload-sizes/p
    (lambda (payloads)
@@ -219,8 +221,24 @@
                      ;; [(#\<)  ]
                      ;; [(#\=)  ]
                      ;; [(#\x10)]
-                     [else  (take (cdr (assoc s payloads)))]))))])
+                     [else  (take/p (cdr (assoc s payloads)))]))))])
        (many/p event/p)))))
+
+(define (slice l offset n)
+  (take (drop l offset) n))
+
+(define slippi-raw-with-length/p
+  (lambda (s ks kf)
+    (let ([size (bytevector-u32-ref (string->utf8 (apply string (slice s 11 4))) 0 (endianness big))])
+      (slippi-raw/p (drop (take s size) 15) ks kf))))
+
+(define slippi/p
+  (bind peek1
+        (lambda (c)
+          (cond
+           [(char=? #\{ c)
+             slippi-raw-with-length/p]
+           [else slippi-raw/p]))))
 
 
 (define (get-distances slp)
@@ -231,7 +249,7 @@
   (define distances
     (map
      (lambda (p1 p2)
-       (sqrt (+ 
+       (sqrt (+
               (sqr
                (- (post-frame-update-y-position p1)
                   (post-frame-update-y-position p2)))
@@ -245,6 +263,6 @@
      (lambda (v s) (format #t "Parser ran successfully.~%") v)
      (lambda () (format #t "Parser failed.~%"))))
 
-(define in (read-file in-file))
+(define in (read-file "~/Slippi/Game_20220108T175940.slp"))
 (define out (run-parser slippi/p in))
 (define distances (get-distances out))

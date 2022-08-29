@@ -1,7 +1,5 @@
 #+TITLE: Parmesan: A Monadic Parser Library for Scheme
 
-* Overview
-
 A parser is a lambda with three arguments:
 
 #+begin_src scheme
@@ -38,7 +36,7 @@ s) c))~, then we can call our success function on ~(car s)~ and ~(cdr
 s)~. Otherwise, we the parse failed.
 
 
-** Implementing the Monadic structure
+** Demonstrating the Monadic structure
 
 We can impose monadic rules on the structure by defining the
 prototypical ~return~, ~fail~, and ~bind~ operators:
