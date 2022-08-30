@@ -11,7 +11,8 @@
       (lambda (p) (get-string-all p)))))
 
 
-(define event-payload-size/p (bind (char/p #\5) (lambda (x) uint8/p)))
+(define event-payload-size/p
+  (bind (char/p #\5) (lambda (x) uint8/p)))
 (define other-event-payload/p
   (and/p take1 uint16/p))
 (define (payload-sizes-map/p n)
@@ -45,10 +46,9 @@
 (define game-info-block/p
   (take/p 312))
 
-(define game-start/p
+(define (game-start/p v)
   (lift
    (all-of/p
-    version/p
     game-info-block/p
     uint32/p
     (repeat 4 uint32/p)
@@ -60,10 +60,16 @@
     uint8/p
     (repeat 4 (take/p 31))
     (repeat 4 (take/p 10))
-    (return '()) ;; (repeat 4 (take/p 29)) TODO: version-dependent parse.. slppi UID
-    (return '()) ;; uint8/p TODO: also version-dependent parse.. language option
+    (if (and (>= (version-major v) 3)
+             (>= (version-minor v) 11))
+        (repeat 4 (take/p 29))
+        (return '()))
+    (if (and (>= (version-major v) 3)
+             (>= (version-minor v) 12))
+        uint8/p
+        (return '()))
     )
-   (lambda (l) (apply make-game-start l))))
+   (lambda (l) (apply make-game-start (cons v l)))))
 
 (define-record-type pre-frame-update
   (fields
@@ -146,42 +152,47 @@
    hitlag-frames-remaining
    animation-index))
 
-(define post-frame-update/p
+(define (post-frame-update/p v)
   (lift (all-of/p
-    int32/p
-    uint8/p
-    uint8/p
-    uint8/p
-    uint16/p
-    float32/p
-    float32/p
-    float32/p
-    float32/p
-    float32/p
-    uint8/p
-    uint8/p
-    uint8/p
-    uint8/p
-    float32/p
-    uint8/p
-    uint8/p
-    uint8/p
-    uint8/p
-    uint8/p
-    float32/p
-    uint8/p
-    uint16/p
-    uint8/p
-    uint8/p
-    uint8/p
-    float32/p
-    float32/p
-    float32/p
-    float32/p
-    float32/p
-    float32/p ;; TODO: version-dependent, requires 3.8.0
-    (return '()) ;; TODO: version-dependent, requires 3.11
-    )
+         int32/p
+         uint8/p
+         uint8/p
+         uint8/p
+         uint16/p
+         float32/p
+         float32/p
+         float32/p
+         float32/p
+         float32/p
+         uint8/p
+         uint8/p
+         uint8/p
+         uint8/p
+         float32/p
+         uint8/p
+         uint8/p
+         uint8/p
+         uint8/p
+         uint8/p
+         float32/p
+         uint8/p
+         uint16/p
+         uint8/p
+         uint8/p
+         uint8/p
+         float32/p
+         float32/p
+         float32/p
+         float32/p
+         float32/p
+         (if (and (>= (version-major v) 3)
+                  (>= (version-minor v) 8))
+             float32/p
+             (return '()))
+         (if (and (>= (version-major v) 3)
+                  (>= (version-minor v) 11))
+             uint32/p
+             (return '())))
         (lambda (l) (apply make-post-frame-update l))))
 
 (define-record-type game-end (fields game-end-method lras-initiator))
@@ -191,10 +202,14 @@
   (fields
    frame-number
    random-seed
-   scene-frame-counter ;; TODO: version-dependent parse, requires >3.10.0
+   scene-frame-counter
    ))
-(define frame-start/p
-  (lift (all-of/p int32/p uint32/p (return '()))
+(define (frame-start/p v)
+  (lift (all-of/p int32/p uint32/p
+                  (if (and (>= (version-major v) 3)
+                           (>= (version-minor v) 10))
+                      uint32/p
+                      (return '())))
         (lambda (l) (apply make-frame-start l))))
 
 (define-record-type frame-bookend (fields frame-number latest-finalized-frame))
@@ -204,24 +219,26 @@
   (bind
    all-payload-sizes/p
    (lambda (payloads)
-     (let ([event/p
+     (let ([current-v (make-version 0 0 0 0)]
+           [event/p
             (bind
              take1
              (lambda (s)
                (if (= 0 (string-length s))
                    fail
-                   (case (string-ref s 0)
-                     ;; cases 054 -> 061 and 016
-                     [(#\6) game-start/p]
-                     [(#\7) pre-frame-update/p]
-                     [(#\8) post-frame-update/p ]
-                     [(#\9) game-end/p ]
-                     ;; [(#\:)  ]
-                     ;; [(#\;)  ]
-                     ;; [(#\<)  ]
-                     ;; [(#\=)  ]
-                     ;; [(#\x10)]
-                     [else  (take/p (cdr (assoc s payloads)))]))))])
+                   (begin
+                     (case (string-ref s 0)
+                       ;; cases 054 -> 061 and 016
+                       [(#\6) (bind version/p (lambda (v) (set! current-v v) (game-start/p v)))]
+                       [(#\7) pre-frame-update/p]
+                       [(#\8) (post-frame-update/p current-v) ]
+                       [(#\9) game-end/p ]
+                       [(#\:) (frame-start/p current-v)]
+                       ;; [(#\;)  ]
+                       ;; [(#\<)  ]
+                       ;; [(#\=)  ]
+                       ;; [(#\x10)]
+                       [else  (take/p (cdr (assoc s payloads)))])))))])
        (many/p event/p)))))
 
 (define (slice l offset n)
@@ -239,7 +256,6 @@
            [(char=? #\{ c)
              slippi-raw-with-length/p]
            [else slippi-raw/p]))))
-
 
 (define (get-distances slp)
   (define postframes (filter (lambda (x) (post-frame-update? x)) slp))
@@ -263,6 +279,6 @@
      (lambda (v s) (format #t "Parser ran successfully.~%") v)
      (lambda () (format #t "Parser failed.~%"))))
 
-(define in (read-file "~/Slippi/Game_20220108T175940.slp"))
+(define in (read-file "~/Slippi/Game_20220609T210706.slp"))
 (define out (run-parser slippi/p in))
 (define distances (get-distances out))
