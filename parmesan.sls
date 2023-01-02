@@ -15,8 +15,9 @@
   (export return fail empty/p peek1
           bind lift either/p and/p
           one-of/p all-of/p many/p
-          psym alphanumeric/p whitespace/p
-	  char/p not-char/p one-of-char/p any-char/p repeat take/p take1
+          psym alphanumeric/p word/p whitespace/p
+	  char/p not-char/p one-of-char/p any-char/p
+	  repeat take/p take1
           uint8/p uint16/p uint32/p uint64/p
           int8/p int16/p int32/p int64/p
           float32/p float64/p run-parser)
@@ -78,13 +79,22 @@
 	 (lambda (pv s1)
 	   (let-values ([(vs s2) (helper (list pv) s1)])
 	     (ks vs s2)))
-	 kf))
-    ;; (either/p
-    ;;  (bind
-    ;;   p (lambda (pv)
-    ;;       (lift (many/p p) (lambda (pvs) (cons pv pvs)))))
-    ;;  empty/p)
-    )
+	 kf)))
+
+  ;; (define (while/p update pred)
+  ;;   (lambda (s ks kf)
+  ;;     (define (helper accum s1)
+  ;; 	(if (null? s)
+  ;; 	    (values (reverse accum) s)
+  ;; 	    (p s1 (lambda (pv s2)
+  ;; 		    (helper (cons pv accum) s2))
+  ;; 	       (lambda () (values (reverse accum) s1)))
+  ;; 	    ))
+  ;;     (p s
+  ;; 	 (lambda (pv s1)
+  ;; 	   (let-values ([(vs s2) (helper (list pv) s1)])
+  ;; 	     (ks vs s2)))
+  ;; 	 kf)))
 
   (define (psym pred)
     (lambda (s ks kf)
@@ -100,7 +110,8 @@
     (apply one-of/p (map char/p (string->list s))))
   (define alphanumeric/p
     (one-of-char/p "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"))
-  (define word/p (many/p alphanumeric/p))
+  (define word/p
+    (lift (many/p alphanumeric/p) (lambda (chars) (list->string chars))))
   (define whitespace/p (one-of-char/p " 	
  "))
 
