@@ -15,11 +15,11 @@
   (export return fail empty/p peek1
           bind lift either/p and/p
           one-of/p all-of/p many/p
-          psym char/p any-char/p repeat
-          take/p take1
+          psym alphanumeric/p whitespace/p
+	  char/p not-char/p one-of-char/p any-char/p repeat take/p take1
           uint8/p uint16/p uint32/p uint64/p
           int8/p int16/p int32/p int64/p
-          float32/p float64/p)
+          float32/p float64/p run-parser)
 
   (import (rnrs (6))
           (rnrs bytevectors))
@@ -66,11 +66,25 @@
     (fold-right and/p empty/p as))
 
   (define (many/p p)
-    (either/p
-     (bind
-      p (lambda (pv)
-          (lift (many/p p) (lambda (pvs) (cons pv pvs)))))
-     empty/p))
+    (lambda (s ks kf)
+      (define (helper accum s1)
+	(if (null? s)
+	    (values (reverse accum) s)
+	    (p s1 (lambda (pv s2)
+		    (helper (cons pv accum) s2))
+	       (lambda () (values (reverse accum) s1)))
+	    ))
+      (p s
+	 (lambda (pv s1)
+	   (let-values ([(vs s2) (helper (list pv) s1)])
+	     (ks vs s2)))
+	 kf))
+    ;; (either/p
+    ;;  (bind
+    ;;   p (lambda (pv)
+    ;;       (lift (many/p p) (lambda (pvs) (cons pv pvs)))))
+    ;;  empty/p)
+    )
 
   (define (psym pred)
     (lambda (s ks kf)
@@ -81,6 +95,14 @@
               (kf)))))
 
   (define (char/p a) (psym (lambda (c) (eq? a c))))
+  (define (not-char/p a) (psym (lambda (c) (not (eq? a c)))))
+  (define (one-of-char/pex s)
+    (apply one-of/p (map char/p (string->list s))))
+  (define alphanumeric/p
+    (one-of-char/p "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"))
+  (define word/p (many/p alphanumeric/p))
+  (define whitespace/p (one-of-char/p " 	
+ "))
 
   (define any-char/p
     (lambda (s ks kf)
@@ -99,11 +121,10 @@
                       (lambda (pvs) (cons pv pvs))))))
        empty/p))
     (helper n))
+  
   (define (take/p n)
     (lift (repeat n any-char/p) (lambda (x) (apply string x))))
   (define take1 (take/p 1))
-
-
 
   (define uint8/p
     (bind take1 (lambda (x)
@@ -153,4 +174,9 @@
     (lift (take/p 8) (lambda (x)
                        (if (< (string-length x) 8)
                            fail
-                           (return (bytevector-ieee-double-ref (string->utf8 x) 0 (endianness big))))))))
+                           (return (bytevector-ieee-double-ref (string->utf8 x) 0 (endianness big)))))))
+  (define (run-parser p str)
+    (p (string->list str)
+       (lambda (v s) v)
+       (lambda () (display "Parser failed.")))))
+

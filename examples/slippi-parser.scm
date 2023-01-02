@@ -202,8 +202,30 @@
   (fields
    frame-number
    random-seed
-   scene-frame-counter
-   ))
+   scene-frame-counter))
+
+(define (frame-number r)
+  (cond
+   ([frame-start? r] (frame-start-frame-number r))
+   ([pre-frame-update? r] (pre-frame-update-frame-number r))
+   ([post-frame-update? r] (post-frame-update-frame-number r))
+   (#t (format #t "Not a valid record\n"))))
+(define (player-number r)
+  (cond
+   ([pre-frame-update? r] (pre-frame-update-player-index r))
+   ([post-frame-update? r] (post-frame-update-player-index r))))
+(define (x-position r)
+  (cond
+   ([pre-frame-update? r] (pre-frame-update-x-position r))
+   ([post-frame-update? r] (post-frame-update-x-position r))))
+(define (y-position r)
+  (cond
+   ([pre-frame-update? r] (pre-frame-update-y-position r))
+   ([post-frame-update? r] (post-frame-update-y-position r))))
+(define (action-state r)
+  (cond
+   ([post-frame-update? r] (post-frame-update-action-state r))))
+
 (define (frame-start/p v)
   (lift (all-of/p int32/p uint32/p
                   (if (and (>= (version-major v) 3)
@@ -238,29 +260,38 @@
                        ;; [(#\<)  ]
                        ;; [(#\=)  ]
                        ;; [(#\x10)]
-                       [else  (take/p (cdr (assoc s payloads)))])))))])
+                       [else  (let ([c (assoc s payloads)])
+                                (if c
+                                    (take/p (cdr (assoc s payloads)))
+                                    fail))])))))])
        (many/p event/p)))))
 
 (define (slice l offset n)
   (take (drop l offset) n))
-
-(define slippi-raw-with-length/p
-  (lambda (s ks kf)
-    (let ([size (bytevector-u32-ref (string->utf8 (apply string (slice s 11 4))) 0 (endianness big))])
-      (slippi-raw/p (drop (take s size) 15) ks kf))))
 
 (define slippi/p
   (bind peek1
         (lambda (c)
           (cond
            [(char=? #\{ c)
-             slippi-raw-with-length/p]
+            (and/p (take/p 15) slippi-raw/p)]
            [else slippi-raw/p]))))
 
+(define (partition-by-player postframes)
+  (partition (lambda (x) (= (post-frame-update-player-index x) 1)) postframes))
+
+(define (run-parser p str)
+  (p (string->list str)
+     (lambda (v s) v)
+     (lambda () (format #t "Parser failed.~%"))))
+
+(define in (read-file  "/home/liamp/Slippi/Game_20221005T181051.slp"))
+(define out-frames (filter post-frame-update? (run-parser slippi/p in)))
+
 (define (get-distances slp)
-  (define postframes (filter (lambda (x) (post-frame-update? x)) slp))
+  (define postframes (filter post-frame-update? slp))
   (define-values (g1 g2)
-    (partition (lambda (x) (= (post-frame-update-player-index x) 1)) postframes))
+    (partition-by-player postframes))
   (define (sqr x) (expt x 2))
   (define distances
     (map
@@ -274,11 +305,40 @@
                   (post-frame-update-x-position p2)))))) g1 g2))
   distances)
 
-(define (run-parser p str)
-  (p (string->list str)
-     (lambda (v s) (format #t "Parser ran successfully.~%") v)
-     (lambda () (format #t "Parser failed.~%"))))
 
-(define in (read-file "~/Slippi/Game_20220609T210706.slp"))
-(define out (run-parser slippi/p in))
-(define distances (get-distances out))
+(define (action-state-damaged? postframe)
+  (or (and (>= (post-frame-update-action-state-id postframe) 75)
+           (<= (post-frame-update-action-state-id postframe) 91))
+      (= (post-frame-update-action-state-id postframe) 38)))
+(define (action-state-grabbed? postframe)
+  (or (and (>= (post-frame-update-action-state-id postframe) 223)
+           (<= (post-frame-update-action-state-id postframe) 232))))
+(define (action-state-hit? postframe)
+  (or (action-state-grabbed? postframe)
+      (action-state-damaged? postframe)))
+;; TODO: command grabs
+
+
+
+(define (get-damaged-states postframes)
+  (define damaged-postframes
+    (filter action-state-damaged? postframes))
+  (define-values (p1 p2) (partition-by-player damaged-postframes))
+  (define p1-frame-numbers (map post-frame-update-frame-number p1))
+  p1-frame-numbers
+  )
+
+(define (combo-strings postframes)
+  (define clean-postframes (delete-duplicates (sort < damaged-postframes)))
+  (define (skip-while-one postframes)
+    (if (and (not (null? postframes)) (= (first postframes) 1))
+        (skip-while-one (cdr postframes))
+        postframes))
+
+  (define (helper postframes cur)
+    '())
+
+  (helper clean-postframes cur))
+
+
+(define distances (get-distances out-frames))
