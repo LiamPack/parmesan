@@ -96,7 +96,7 @@
 
   (define (char/p a) (psym (lambda (c) (eq? a c))))
   (define (not-char/p a) (psym (lambda (c) (not (eq? a c)))))
-  (define (one-of-char/pex s)
+  (define (one-of-char/p s)
     (apply one-of/p (map char/p (string->list s))))
   (define alphanumeric/p
     (one-of-char/p "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"))
